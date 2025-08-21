@@ -43,7 +43,7 @@ if option == "Single Stock":
     fig, ax = plt.subplots(figsize=(10,5))
     ax.plot(df.index, df[stock], label=f"{stock} Close Price", color="blue")
     ax.plot(df.index, df[stock].rolling(50).mean(), label="50-day MA", color="orange")
-    ax.plot(df.index, df[stock].rolling(200).mean(), label="200-day MA", color="red")
+    ax.plot(df.index, df[stock].rolling(100).mean(), label="100-day MA", color="red")
     ax.set_xlabel("Date")
     ax.set_ylabel("Price")
     ax.legend()
