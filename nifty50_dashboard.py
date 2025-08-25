@@ -11,8 +11,8 @@ st.sidebar.header("Filter Options")
 # Multiple stock selection
 tickers = st.sidebar.multiselect(
     "Select Stocks",
-    options=["^NSEI", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS"],
-    default=["^NSEI"]
+    options=["NSEI", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS"],
+    default=["NSEI"]
 )
 
 # Date range picker
@@ -85,14 +85,15 @@ for ticker, df in all_data.items():
     fig = go.Figure()
 
     # Candlesticks
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df["Open"],
-        high=df["High"],
-        low=df["Low"],
-        close=df["Close"],
-        name="Candlestick"
-    ))
+    fig = go.Figure(data=[go.Candlestick(
+    x=df.index,
+    open=df['Open'],
+    high=df['High'],
+    low=df['Low'],
+    close=df['Close'],
+    name='Candlestick'
+)])
+
 
     # SMA
     if show_sma and "SMA20" in df:
