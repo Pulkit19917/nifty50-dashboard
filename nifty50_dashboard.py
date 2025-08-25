@@ -1,76 +1,144 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import yfinance as yf
-from datetime import date, timedelta
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="Live NIFTY50 Dashboard", layout="wide")
+# ---------------------------
+# Sidebar Filters
+# ---------------------------
+st.sidebar.header("Filter Options")
 
-# ---------------- Stock List ----------------
-nifty50_stocks = [
-    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS","BHARTIARTL.NS",
-    "HINDUNILVR.NS","ITC.NS","KOTAKBANK.NS","LT.NS","AXISBANK.NS","ASIANPAINT.NS","MARUTI.NS",
-    "SUNPHARMA.NS","HCLTECH.NS","ULTRACEMCO.NS","WIPRO.NS","ONGC.NS","POWERGRID.NS","NTPC.NS",
-    "BAJAJFINSV.NS","BAJFINANCE.NS","HDFCLIFE.NS","TITAN.NS","JSWSTEEL.NS","ADANIENT.NS",
-    "ADANIPORTS.NS","CIPLA.NS","DRREDDY.NS","BRITANNIA.NS","COALINDIA.NS","GRASIM.NS","HINDALCO.NS",
-    "DIVISLAB.NS","TECHM.NS","M&M.NS","TATASTEEL.NS","TATAMOTORS.NS","HEROMOTOCO.NS","EICHERMOT.NS",
-    "NESTLEIND.NS","BPCL.NS","INDUSINDBK.NS","SHREECEM.NS","SBILIFE.NS","BAJAJ-AUTO.NS",
-    "UPL.NS","APOLLOHOSP.NS","HDFCAMC.NS"
-]
+# Multiple stock selection
+tickers = st.sidebar.multiselect(
+    "Select Stocks",
+    options=["^NSEI", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS"],
+    default=["^NSEI"]
+)
 
-# ---------------- Date Range ----------------
-end = date.today()
-start = end - timedelta(days=365*2)  # last 2 years
+# Date range picker
+start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2023-01-01"))
+end_date = st.sidebar.date_input("End Date", pd.to_datetime("today"))
 
-# ---------------- Sidebar ----------------
-st.sidebar.header("Dashboard Options")
-option = st.sidebar.radio("Choose analysis:", ["Single Stock", "Multi-Stock Comparison", "Correlation Heatmap"])
+# Timeframe selector
+timeframe = st.sidebar.selectbox(
+    "Select Timeframe",
+    ("Daily", "Weekly", "Monthly")
+)
 
-# ---------------- Fetch Data ----------------
-@st.cache_data
-def load_data(tickers, start, end):
-    df = yf.download(tickers, start=start, end=end)["Close"]
+# Technical Indicators
+st.sidebar.header("Technical Indicators")
+show_sma = st.sidebar.checkbox("SMA (20-day)", value=True)
+show_ema = st.sidebar.checkbox("EMA (20-day)", value=False)
+show_rsi = st.sidebar.checkbox("RSI (14)", value=False)
+
+# ---------------------------
+# Function for Indicators
+# ---------------------------
+def add_indicators(df):
+    if show_sma:
+        df["SMA20"] = df["Close"].rolling(window=20).mean()
+    if show_ema:
+        df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+    if show_rsi:
+        delta = df["Close"].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        df["RSI"] = 100 - (100 / (1 + rs))
     return df
 
-df = load_data(nifty50_stocks, start, end)
+# ---------------------------
+# Load & Process Data
+# ---------------------------
+all_data = {}
 
-# ---------------- Single Stock ----------------
-if option == "Single Stock":
-    stock = st.selectbox("Choose a stock", nifty50_stocks)
-    st.subheader(f"📈 Price Trend - {stock}")
+for ticker in tickers:
+    df = yf.download(ticker, start=start_date, end=end_date)
 
-    fig, ax = plt.subplots(figsize=(10,5))
-    ax.plot(df.index, df[stock], label=f"{stock} Close Price", color="blue")
-    ax.plot(df.index, df[stock].rolling(50).mean(), label="50-day MA", color="orange")
-    ax.plot(df.index, df[stock].rolling(100).mean(), label="100-day MA", color="red")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price")
-    ax.legend()
-    ax.grid(True)
-    st.pyplot(fig)
+    # Resample based on timeframe
+    if timeframe == "Weekly":
+        df = df.resample("W").agg({
+            "Open": "first",
+            "High": "max",
+            "Low": "min",
+            "Close": "last",
+            "Volume": "sum"
+        })
+    elif timeframe == "Monthly":
+        df = df.resample("M").agg({
+            "Open": "first",
+            "High": "max",
+            "Low": "min",
+            "Close": "last",
+            "Volume": "sum"
+        })
 
-    st.subheader("Latest Data")
-    st.dataframe(df[[stock]].tail(20))
+    df = add_indicators(df)
+    all_data[ticker] = df
 
-# ---------------- Multi-Stock Comparison ----------------
-elif option == "Multi-Stock Comparison":
-    stocks = st.multiselect("Choose up to 5 stocks", nifty50_stocks, default=["RELIANCE.NS","INFY.NS"])
-    if stocks:
-        st.subheader(f"📊 Multi-Stock Comparison")
-        fig, ax = plt.subplots(figsize=(12,6))
-        for s in stocks:
-            ax.plot(df.index, df[s], label=s)
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Price")
-        ax.legend()
-        ax.grid(True)
-        st.pyplot(fig)
+# ---------------------------
+# Candlestick + Volume Chart
+# ---------------------------
+for ticker, df in all_data.items():
+    st.subheader(f"{ticker} Stock Chart ({timeframe})")
 
-# ---------------- Correlation Heatmap ----------------
-elif option == "Correlation Heatmap":
-    st.subheader("🔗 Correlation Heatmap - NIFTY50 Stocks")
-    corr = df.corr()
-    fig, ax = plt.subplots(figsize=(14,10))
-    sns.heatmap(corr, cmap="coolwarm", ax=ax, cbar=True)
-    st.pyplot(fig)
+    fig = go.Figure()
+
+    # Candlesticks
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+        name="Candlestick"
+    ))
+
+    # SMA
+    if show_sma and "SMA20" in df:
+        fig.add_trace(go.Scatter(x=df.index, y=df["SMA20"], mode="lines", name="SMA20", line=dict(color="blue")))
+
+    # EMA
+    if show_ema and "EMA20" in df:
+        fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], mode="lines", name="EMA20", line=dict(color="orange")))
+
+    # Volume Bars
+    fig.add_trace(go.Bar(
+        x=df.index,
+        y=df["Volume"],
+        name="Volume",
+        marker_color="gray",
+        opacity=0.3,
+        yaxis="y2"
+    ))
+
+    # Layout with 2 y-axes
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        template="plotly_dark",
+        height=700,
+        yaxis=dict(title="Price"),
+        yaxis2=dict(title="Volume", overlaying="y", side="right", showgrid=False)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------------------
+# RSI Chart
+# ---------------------------
+if show_rsi:
+    for ticker, df in all_data.items():
+        st.subheader(f"{ticker} RSI (14)")
+        rsi_fig = go.Figure()
+        rsi_fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], mode="lines", name="RSI", line=dict(color="purple")))
+        rsi_fig.add_hline(y=70, line_dash="dot", line_color="red")
+        rsi_fig.add_hline(y=30, line_dash="dot", line_color="green")
+        rsi_fig.update_layout(template="plotly_dark", height=300)
+        st.plotly_chart(rsi_fig, use_container_width=True)
+
+# ---------------------------
+# Show Data
+# ---------------------------
+for ticker, df in all_data.items():
+    st.subheader(f"Data for {ticker}")
+    st.dataframe(df.tail(20))

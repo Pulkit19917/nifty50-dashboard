@@ -1,0 +1,10 @@
+git add .
+git commit -m "initial commit"
+git push origin main
+
+
+
+remove history
+
+git pull origin main --allow-unrelated-histories
+git push origin main
